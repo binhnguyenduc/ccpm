@@ -35,6 +35,54 @@ Begin work on a GitHub issue with parallel agents based on work stream analysis.
 
 ## Instructions
 
+### 0a. Detect Tracker
+
+```bash
+source .claude/ccpm.config 2>/dev/null || true
+CCPM_TRACKER="${CCPM_TRACKER:-github}"
+```
+
+If `CCPM_TRACKER=linear`: Run Step 0L then continue to parallel agent launch (Steps 1+).
+If `CCPM_TRACKER=github`: Skip Step 0L, follow existing Quick Check and Steps.
+
+### 0L. Linear Issue Start
+
+```bash
+# Preflight
+command -v linear >/dev/null 2>&1 || {
+  echo "❌ linear-cli not found. Install: brew install schpet/tap/linear"
+  exit 1
+}
+[ -z "$LINEAR_TEAM_ID" ] && {
+  echo "❌ LINEAR_TEAM_ID not set. Run: /pm:init and choose linear."
+  exit 1
+}
+
+# Resolve task file and Linear identifier
+task_file=$(find .claude/epics -name "$ARGUMENTS.md" 2>/dev/null | head -1)
+if [ -n "$task_file" ]; then
+  linear_id=$(basename "$task_file" .md)
+  if [[ ! "$linear_id" =~ ^[A-Z]+-[0-9]+$ ]]; then
+    linear_id=$(grep '^linear:' "$task_file" 2>/dev/null | sed 's|.*issue/||' | tr -d '[:space:]')
+  fi
+fi
+
+[ -z "$linear_id" ] && {
+  echo "❌ Cannot resolve Linear issue identifier."
+  exit 1
+}
+
+# Assign to self and set In Progress state
+linear issue update "$linear_id" --assignee self 2>/dev/null \
+  && echo "✅ Assigned $linear_id to self" \
+  || echo "⚠️  Could not assign $linear_id (check auth: linear auth login)"
+
+linear issue update "$linear_id" --state "$LINEAR_IN_PROGRESS_STATE"
+echo "✅ State set to: $LINEAR_IN_PROGRESS_STATE"
+```
+
+Note: After Step 0L, continue to the existing worktree check and parallel agent launch (Steps 1+). The parallel agent logic is tracker-agnostic — no changes needed there.
+
 ### 1. Ensure Worktree Exists
 
 Check if epic worktree exists:

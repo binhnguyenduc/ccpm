@@ -36,6 +36,7 @@ Stop losing context. Stop blocking on tasks. Stop shipping bugs. This battle-tes
 - [Proven Results](#proven-results)
 - [Example Flow](#example-flow)
 - [Get Started Now](#get-started-now)
+- [Issue Trackers](#issue-trackers)
 - [Local vs Remote](#local-vs-remote)
 - [Technical Notes](#technical-notes)
 - [Support This Project](#support-this-project)
@@ -437,6 +438,12 @@ Teams using this system report:
 ```
 
 Watch as structured planning transforms into shipped code.
+
+## Issue Trackers
+
+CCPM supports two issue trackers:
+- **GitHub Issues** (default) — no configuration needed
+- **[Linear](docs/linear-setup.md)** — set `CCPM_TRACKER=linear` via `/pm:init`
 
 ## Local vs Remote
 

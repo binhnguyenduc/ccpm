@@ -1,91 +1,119 @@
 #!/bin/bash
 
-epic_name="$1"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(git -C "$SCRIPT_DIR" rev-parse --show-toplevel 2>/dev/null || echo "$SCRIPT_DIR/../../..")"
+config_file="$REPO_ROOT/.claude/ccpm.config"
+[ -f "$config_file" ] || echo "⚠️  ccpm.config not found at $config_file — using defaults" >&2
+source "$config_file" 2>/dev/null || true
 
-if [ -z "$epic_name" ]; then
-  echo "❌ Please provide an epic name"
-  echo "Usage: /pm:epic-show <epic-name>"
-  exit 1
-fi
+if [ "${CCPM_TRACKER:-github}" = "linear" ]; then
+  command -v linear >/dev/null 2>&1 || { echo "❌ linear-cli not found. Install: brew install schpet/tap/linear"; exit 1; }
+  [ -z "$LINEAR_TEAM_ID" ] && { echo "❌ LINEAR_TEAM_ID not set. Run: /pm:init"; exit 1; }
 
-echo "Getting epic..."
-echo ""
-echo ""
+  EPIC_NAME="${1:-}"
+  [ -z "$EPIC_NAME" ] && { echo "❌ Usage: epic-show <epic-identifier>"; exit 1; }
 
-epic_dir=".claude/epics/$epic_name"
-epic_file="$epic_dir/epic.md"
-
-if [ ! -f "$epic_file" ]; then
-  echo "❌ Epic not found: $epic_name"
   echo ""
-  echo "Available epics:"
-  for dir in .claude/epics/*/; do
-    [ -d "$dir" ] && echo "  • $(basename "$dir")"
-  done
-  exit 1
-fi
+  echo "📋 Epic: $EPIC_NAME (Linear)"
+  echo "=============================="
+  echo ""
 
-# Display epic details
-echo "📚 Epic: $epic_name"
-echo "================================"
-echo ""
+  # Show epic issue (surface all errors, not just "not found")
+  linear issue view "$EPIC_NAME" || echo "❌ Epic not found: $EPIC_NAME"
+  echo ""
 
-# Extract metadata
-status=$(grep "^status:" "$epic_file" | head -1 | sed 's/^status: *//')
-progress=$(grep "^progress:" "$epic_file" | head -1 | sed 's/^progress: *//')
-github=$(grep "^github:" "$epic_file" | head -1 | sed 's/^github: *//')
-created=$(grep "^created:" "$epic_file" | head -1 | sed 's/^created: *//')
+  # List team issues — linear-cli has no parent-filter; shows all team issues as context
+  echo "📝 Team Issues (all — linear-cli does not support parent filtering):"
+  linear issue list --team "$LINEAR_TEAM_ID" 2>/dev/null | head -20 || echo "  (none)"
+  echo ""
+else
+  epic_name="$1"
 
-echo "📊 Metadata:"
-echo "  Status: ${status:-planning}"
-echo "  Progress: ${progress:-0%}"
-[ -n "$github" ] && echo "  GitHub: $github"
-echo "  Created: ${created:-unknown}"
-echo ""
-
-# Show tasks
-echo "📝 Tasks:"
-task_count=0
-open_count=0
-closed_count=0
-
-for task_file in "$epic_dir"/[0-9]*.md; do
-  [ -f "$task_file" ] || continue
-
-  task_num=$(basename "$task_file" .md)
-  task_name=$(grep "^name:" "$task_file" | head -1 | sed 's/^name: *//')
-  task_status=$(grep "^status:" "$task_file" | head -1 | sed 's/^status: *//')
-  parallel=$(grep "^parallel:" "$task_file" | head -1 | sed 's/^parallel: *//')
-
-  if [ "$task_status" = "closed" ] || [ "$task_status" = "completed" ]; then
-    echo "  ✅ #$task_num - $task_name"
-    ((closed_count++))
-  else
-    echo "  ⬜ #$task_num - $task_name"
-    [ "$parallel" = "true" ] && echo -n " (parallel)"
-    ((open_count++))
+  if [ -z "$epic_name" ]; then
+    echo "❌ Please provide an epic name"
+    echo "Usage: /pm:epic-show <epic-name>"
+    exit 1
   fi
 
-  ((task_count++))
-done
+  echo "Getting epic..."
+  echo ""
+  echo ""
 
-if [ $task_count -eq 0 ]; then
-  echo "  No tasks created yet"
-  echo "  Run: /pm:epic-decompose $epic_name"
+  epic_dir=".claude/epics/$epic_name"
+  epic_file="$epic_dir/epic.md"
+
+  if [ ! -f "$epic_file" ]; then
+    echo "❌ Epic not found: $epic_name"
+    echo ""
+    echo "Available epics:"
+    for dir in .claude/epics/*/; do
+      [ -d "$dir" ] && echo "  • $(basename "$dir")"
+    done
+    exit 1
+  fi
+
+  # Display epic details
+  echo "📚 Epic: $epic_name"
+  echo "================================"
+  echo ""
+
+  # Extract metadata
+  status=$(grep "^status:" "$epic_file" | head -1 | sed 's/^status: *//')
+  progress=$(grep "^progress:" "$epic_file" | head -1 | sed 's/^progress: *//')
+  github=$(grep "^github:" "$epic_file" | head -1 | sed 's/^github: *//')
+  created=$(grep "^created:" "$epic_file" | head -1 | sed 's/^created: *//')
+
+  echo "📊 Metadata:"
+  echo "  Status: ${status:-planning}"
+  echo "  Progress: ${progress:-0%}"
+  [ -n "$github" ] && echo "  GitHub: $github"
+  echo "  Created: ${created:-unknown}"
+  echo ""
+
+  # Show tasks
+  echo "📝 Tasks:"
+  task_count=0
+  open_count=0
+  closed_count=0
+
+  for task_file in "$epic_dir"/[0-9]*.md; do
+    [ -f "$task_file" ] || continue
+
+    task_num=$(basename "$task_file" .md)
+    task_name=$(grep "^name:" "$task_file" | head -1 | sed 's/^name: *//')
+    task_status=$(grep "^status:" "$task_file" | head -1 | sed 's/^status: *//')
+    parallel=$(grep "^parallel:" "$task_file" | head -1 | sed 's/^parallel: *//')
+
+    if [ "$task_status" = "closed" ] || [ "$task_status" = "completed" ]; then
+      echo "  ✅ #$task_num - $task_name"
+      ((closed_count++))
+    else
+      echo "  ⬜ #$task_num - $task_name"
+      [ "$parallel" = "true" ] && echo -n " (parallel)"
+      ((open_count++))
+    fi
+
+    ((task_count++))
+  done
+
+  if [ $task_count -eq 0 ]; then
+    echo "  No tasks created yet"
+    echo "  Run: /pm:epic-decompose $epic_name"
+  fi
+
+  echo ""
+  echo "📈 Statistics:"
+  echo "  Total tasks: $task_count"
+  echo "  Open: $open_count"
+  echo "  Closed: $closed_count"
+  [ $task_count -gt 0 ] && echo "  Completion: $((closed_count * 100 / task_count))%"
+
+  # Next actions
+  echo ""
+  echo "💡 Actions:"
+  [ $task_count -eq 0 ] && echo "  • Decompose into tasks: /pm:epic-decompose $epic_name"
+  [ -z "$github" ] && [ $task_count -gt 0 ] && echo "  • Sync to GitHub: /pm:epic-sync $epic_name"
+  [ -n "$github" ] && [ "$status" != "completed" ] && echo "  • Start work: /pm:epic-start $epic_name"
 fi
-
-echo ""
-echo "📈 Statistics:"
-echo "  Total tasks: $task_count"
-echo "  Open: $open_count"
-echo "  Closed: $closed_count"
-[ $task_count -gt 0 ] && echo "  Completion: $((closed_count * 100 / task_count))%"
-
-# Next actions
-echo ""
-echo "💡 Actions:"
-[ $task_count -eq 0 ] && echo "  • Decompose into tasks: /pm:epic-decompose $epic_name"
-[ -z "$github" ] && [ $task_count -gt 0 ] && echo "  • Sync to GitHub: /pm:epic-sync $epic_name"
-[ -n "$github" ] && [ "$status" != "completed" ] && echo "  • Start work: /pm:epic-start $epic_name"
 
 exit 0

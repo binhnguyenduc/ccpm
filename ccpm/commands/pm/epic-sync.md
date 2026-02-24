@@ -25,6 +25,16 @@ If no tasks found: "❌ No tasks to sync. Run: /pm:epic-decompose $ARGUMENTS"
 
 ## Instructions
 
+### 0a. Detect Tracker
+
+```bash
+source .claude/ccpm.config 2>/dev/null || true
+CCPM_TRACKER="${CCPM_TRACKER:-github}"
+```
+
+If `CCPM_TRACKER=linear`: Follow the **Linear Sync Path** below, then stop — skip all GitHub steps.
+If `CCPM_TRACKER=github`: Skip the Linear Sync Path, continue with existing Step 0 onward (unchanged).
+
 ### 0. Check Remote Repository
 
 Follow `/rules/github-operations.md` to ensure we're not syncing to the CCPM template:
@@ -449,6 +459,194 @@ Next steps:
   - Start parallel execution: /pm:epic-start $ARGUMENTS
   - Or work on single issue: /pm:issue-start {issue_number}
   - View epic: https://github.com/{owner}/{repo}/issues/{epic_number}
+```
+
+## Linear Sync Path
+
+Follow this path when `CCPM_TRACKER=linear`. After completing, do not execute any GitHub steps.
+
+### L1. Preflight
+
+```bash
+# linear-cli installed?
+command -v linear >/dev/null 2>&1 || {
+  echo "❌ linear-cli not found. Install: brew install schpet/tap/linear"
+  exit 1
+}
+
+# LINEAR_TEAM_ID set?
+[ -z "$LINEAR_TEAM_ID" ] && {
+  echo "❌ LINEAR_TEAM_ID not set. Run: /pm:init and choose linear."
+  exit 1
+}
+
+# Epic exists?
+test -f .claude/epics/$ARGUMENTS/epic.md || {
+  echo "❌ Epic not found: $ARGUMENTS. Run: /pm:prd-parse $ARGUMENTS"
+  exit 1
+}
+```
+
+### L2. Create Epic Issue
+
+```bash
+# Strip frontmatter from epic body; truncate to 4000 chars to avoid ARG_MAX
+sed '1,/^---$/d; 1,/^---$/d' .claude/epics/$ARGUMENTS/epic.md > /tmp/linear-epic-body.md
+epic_body=$(head -c 4000 /tmp/linear-epic-body.md)
+
+# Create the epic issue in Linear; parse identifier from output (e.g. "ENG-42 https://...")
+epic_id=$(linear issue create \
+  --team "$LINEAR_TEAM_ID" \
+  --title "Epic: $ARGUMENTS" \
+  --description "$epic_body" | grep -oE '[A-Z]+-[0-9]+' | head -1)
+
+[ -z "$epic_id" ] && {
+  echo "❌ Failed to create Linear epic or parse identifier. Check linear auth and team."
+  exit 1
+}
+echo "✅ Epic created: $epic_id"
+```
+
+`$epic_id` will be the Linear identifier (e.g. `ENG-42`). Store it for use in L3.
+
+### L3. Create Task Sub-Issues
+
+```bash
+> /tmp/linear-task-mapping.txt
+
+for task_file in .claude/epics/$ARGUMENTS/[0-9][0-9][0-9].md; do
+  [ -f "$task_file" ] || continue
+  task_name=$(grep '^name:' "$task_file" | sed 's/^name: *//')
+  # Truncate body to 4000 chars to avoid ARG_MAX limits
+  body=$(sed '1,/^---$/d; 1,/^---$/d' "$task_file" | head -c 4000)
+
+  task_id=$(linear issue create \
+    --team "$LINEAR_TEAM_ID" \
+    --title "$task_name" \
+    --description "$body" \
+    --parent "$epic_id" | grep -oE '[A-Z]+-[0-9]+' | head -1)
+
+  [ -z "$task_id" ] && { echo "⚠️  Failed to create sub-issue for: $task_name — skipping"; continue; }
+  echo "$task_file:$task_id" >> /tmp/linear-task-mapping.txt
+  echo "✅ Created sub-issue $task_id: $task_name"
+done
+```
+
+### L4. Rename Task Files and Update References
+
+```bash
+# Build old number → Linear ID mapping
+> /tmp/linear-id-mapping.txt
+while IFS=: read -r task_file task_id; do
+  old_num=$(basename "$task_file" .md)
+  echo "$old_num:$task_id" >> /tmp/linear-id-mapping.txt
+done < /tmp/linear-task-mapping.txt
+
+current_date=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+
+# Rename and update each file
+while IFS=: read -r task_file task_id; do
+  new_name="$(dirname "$task_file")/${task_id}.md"
+
+  # Atomic copy first (no data loss if interrupted)
+  cp "$task_file" "$new_name"
+
+  # Substitute old sequential numbers with Linear IDs using sed (portable, no injection risk)
+  while IFS=: read -r old_num new_id; do
+    tmp_file="${new_name}.tmp"
+    sed "s/${old_num}/${new_id}/g" "$new_name" > "$tmp_file" && mv "$tmp_file" "$new_name"
+  done < /tmp/linear-id-mapping.txt
+
+  # Remove original only after successful copy
+  [ "$task_file" != "$new_name" ] && rm "$task_file"
+
+  # Update frontmatter: add linear: URL using awk (portable, no BSD sed \n issue)
+  workspace=$(echo "$task_id" | cut -d- -f1 | tr '[:upper:]' '[:lower:]')
+  linear_url="https://linear.app/${workspace}/issue/${task_id}"
+
+  if grep -q "^linear:" "$new_name"; then
+    sed -i.bak "s|^linear:.*|linear: ${linear_url}|" "$new_name" && rm -f "${new_name}.bak"
+  else
+    # Insert linear: field after github: line using awk (macOS/Linux portable)
+    tmp_file="${new_name}.tmp"
+    awk -v url="$linear_url" '/^github:/{print; print "linear: " url; next}1' "$new_name" > "$tmp_file" \
+      && mv "$tmp_file" "$new_name"
+  fi
+
+  sed -i.bak "s|^updated:.*|updated: ${current_date}|" "$new_name" && rm -f "${new_name}.bak"
+
+  echo "✅ Renamed $(basename $task_file) → $(basename $new_name)"
+done < /tmp/linear-task-mapping.txt
+```
+
+### L5. Update Epic File Frontmatter
+
+```bash
+current_date=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+workspace=$(echo "$epic_id" | cut -d- -f1 | tr '[:upper:]' '[:lower:]')
+epic_linear_url="https://linear.app/${workspace}/issue/${epic_id}"
+
+if grep -q "^linear:" .claude/epics/$ARGUMENTS/epic.md; then
+  sed -i.bak "s|^linear:.*|linear: ${epic_linear_url}|" .claude/epics/$ARGUMENTS/epic.md \
+    && rm -f .claude/epics/$ARGUMENTS/epic.md.bak
+else
+  tmp_file="/tmp/epic-frontmatter.tmp"
+  awk -v url="$epic_linear_url" '/^github:/{print; print "linear: " url; next}1' \
+    .claude/epics/$ARGUMENTS/epic.md > "$tmp_file" \
+    && mv "$tmp_file" .claude/epics/$ARGUMENTS/epic.md
+fi
+sed -i.bak "s|^updated:.*|updated: ${current_date}|" .claude/epics/$ARGUMENTS/epic.md \
+  && rm -f .claude/epics/$ARGUMENTS/epic.md.bak
+```
+
+### L6. Create linear-mapping.md
+
+```bash
+cat > .claude/epics/$ARGUMENTS/linear-mapping.md << EOF
+# Linear Issue Mapping
+
+Epic: ${epic_id} - https://linear.app/${workspace}/issue/${epic_id}
+
+Tasks:
+EOF
+
+for task_file in .claude/epics/$ARGUMENTS/[A-Z][A-Z]*-[0-9]*.md; do
+  [ -f "$task_file" ] || continue
+  task_id=$(basename "$task_file" .md)
+  task_name=$(grep '^name:' "$task_file" | sed 's/^name: *//')
+  workspace=$(echo "$task_id" | cut -d- -f1 | tr '[:upper:]' '[:lower:]')
+  echo "- ${task_id}: ${task_name} - https://linear.app/${workspace}/issue/${task_id}" \
+    >> .claude/epics/$ARGUMENTS/linear-mapping.md
+done
+
+echo "" >> .claude/epics/$ARGUMENTS/linear-mapping.md
+echo "Synced: $(date -u +"%Y-%m-%dT%H:%M:%SZ")" >> .claude/epics/$ARGUMENTS/linear-mapping.md
+echo "✅ Created linear-mapping.md"
+```
+
+### L7. Create Worktree
+
+Create the epic worktree so `/pm:issue-start` can run immediately:
+
+```bash
+git worktree add ../epic-$ARGUMENTS -b epic/$ARGUMENTS 2>/dev/null || {
+  echo "⚠️  Worktree already exists or branch conflict — skipping worktree creation."
+  echo "    To create manually: git worktree add ../epic-$ARGUMENTS epic/$ARGUMENTS"
+}
+```
+
+### L8. Output
+
+```
+✅ Synced to Linear
+  - Epic: {epic_id}
+  - Tasks: {count} sub-issues created
+  - Files renamed: 001.md → {LINEAR-ID}.md
+  - References updated: depends_on/conflicts_with use Linear IDs
+  - Mapping: .claude/epics/$ARGUMENTS/linear-mapping.md
+  - Worktree: ../epic-$ARGUMENTS
+
+Next: /pm:issue-start {first_task_id}
 ```
 
 ## Error Handling
