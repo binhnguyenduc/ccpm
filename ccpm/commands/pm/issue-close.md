@@ -13,6 +13,51 @@ Mark an issue as complete and close it on GitHub.
 
 ## Instructions
 
+### 0. Detect Tracker
+
+```bash
+source .claude/ccpm.config 2>/dev/null || true
+CCPM_TRACKER="${CCPM_TRACKER:-github}"
+```
+
+**If `CCPM_TRACKER=linear`**: Follow Step 0L (Linear close), update local frontmatter, done.
+**If `CCPM_TRACKER=github`**: Skip Step 0L, follow existing steps.
+
+### 0L. Linear Issue Close
+
+```bash
+# Preflight
+command -v linear >/dev/null 2>&1 || {
+  echo "❌ linear-cli not found. Install: brew install schpet/tap/linear"
+  exit 1
+}
+
+# Resolve identifier from filename or frontmatter
+task_file=".claude/epics/{epic_name}/$ARGUMENTS.md"
+linear_id=$(basename "$task_file" .md)
+if [[ ! "$linear_id" =~ ^[A-Z]+-[0-9]+$ ]]; then
+  linear_id=$(grep '^linear:' "$task_file" | sed 's|.*issue/||' | tr -d '[:space:]')
+fi
+
+[ -z "$linear_id" ] && {
+  echo "❌ Cannot resolve Linear issue identifier."
+  exit 1
+}
+
+# Transition to Done state
+linear issue edit "$linear_id" --state "$LINEAR_DONE_STATE"
+echo "✅ Linear issue $linear_id set to: $LINEAR_DONE_STATE"
+
+# Update local task frontmatter
+current_date=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+[ -f "$task_file" ] && {
+  sed -i.bak "s/^status:.*/status: closed/" "$task_file"
+  sed -i.bak "s/^updated:.*/updated: $current_date/" "$task_file"
+  rm -f "${task_file}.bak"
+  echo "✅ Local task frontmatter updated: status=closed"
+}
+```
+
 ### 1. Find Local Task File
 
 First check if `.claude/epics/*/$ARGUMENTS.md` exists (new naming).
