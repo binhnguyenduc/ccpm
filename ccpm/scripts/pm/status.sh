@@ -16,7 +16,7 @@ if [ "${CCPM_TRACKER:-github}" = "linear" ]; then
   echo "=================================================="
   echo ""
   echo "📝 Open Issues:"
-  linear issue list --team "$LINEAR_TEAM_ID" 2>/dev/null || echo "  (none or CLI error)"
+  linear issue list --team "$LINEAR_TEAM_ID" --sort "${LINEAR_ISSUE_SORT:-priority}" 2>/dev/null || echo "  (none or CLI error)"
   echo ""
 else
   echo "Getting status..."
