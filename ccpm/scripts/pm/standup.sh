@@ -2,7 +2,9 @@
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(git -C "$SCRIPT_DIR" rev-parse --show-toplevel 2>/dev/null || echo "$SCRIPT_DIR/../../..")"
-source "$REPO_ROOT/.claude/ccpm.config" 2>/dev/null || true
+config_file="$REPO_ROOT/.claude/ccpm.config"
+[ -f "$config_file" ] || echo "⚠️  ccpm.config not found at $config_file — using defaults" >&2
+source "$config_file" 2>/dev/null || true
 
 if [ "${CCPM_TRACKER:-github}" = "linear" ]; then
   command -v linear >/dev/null 2>&1 || { echo "❌ linear-cli not found. Install: brew install schpet/tap/linear"; exit 1; }
@@ -13,11 +15,12 @@ if [ "${CCPM_TRACKER:-github}" = "linear" ]; then
   echo "📋 Standup — $TODAY (Linear)"
   echo "=============================="
   echo ""
-  echo "Recent Activity (Team: $LINEAR_TEAM_ID):"
-  # List in-progress and recently updated issues
-  linear issue list --team "$LINEAR_TEAM_ID" 2>/dev/null | head -15 || echo "  (none or CLI error)"
+  echo "In Progress (Team: $LINEAR_TEAM_ID):"
+  # Show issues currently in progress
+  linear issue list --team "$LINEAR_TEAM_ID" --state "${LINEAR_IN_PROGRESS_STATE:-In Progress}" 2>/dev/null | head -10 \
+    || linear issue list --team "$LINEAR_TEAM_ID" 2>/dev/null | head -10 \
+    || echo "  (none or CLI error)"
   echo ""
-  echo "Run 'linear issue list --help' to see filtering options for your CLI version."
 else
   echo "📅 Daily Standup - $(date '+%Y-%m-%d')"
   echo "================================"

@@ -53,8 +53,12 @@ command -v linear >/dev/null 2>&1 || {
   echo "❌ linear-cli not found. Install: brew install schpet/tap/linear"
   exit 1
 }
+[ -z "$LINEAR_TEAM_ID" ] && {
+  echo "❌ LINEAR_TEAM_ID not set. Run: /pm:init and choose linear."
+  exit 1
+}
 
-# Resolve identifier
+# Resolve task file and Linear identifier
 task_file=$(find .claude/epics -name "$ARGUMENTS.md" 2>/dev/null | head -1)
 if [ -n "$task_file" ]; then
   linear_id=$(basename "$task_file" .md)
@@ -68,16 +72,12 @@ fi
   exit 1
 }
 
-# Assign to self
-linear issue edit "$linear_id" --assignee @me 2>/dev/null || {
-  # Fallback: try without @me if not supported
-  me=$(linear whoami 2>/dev/null | grep -i email | awk '{print $2}' || echo "")
-  [ -n "$me" ] && linear issue edit "$linear_id" --assignee "$me"
-}
-echo "✅ Assigned $linear_id to self"
+# Assign to self and set In Progress state
+linear issue update "$linear_id" --assignee self 2>/dev/null \
+  && echo "✅ Assigned $linear_id to self" \
+  || echo "⚠️  Could not assign $linear_id (check auth: linear auth login)"
 
-# Set In Progress state
-linear issue edit "$linear_id" --state "$LINEAR_IN_PROGRESS_STATE"
+linear issue update "$linear_id" --state "$LINEAR_IN_PROGRESS_STATE"
 echo "✅ State set to: $LINEAR_IN_PROGRESS_STATE"
 ```
 

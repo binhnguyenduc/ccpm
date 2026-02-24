@@ -25,8 +25,8 @@ command -v linear >/dev/null 2>&1 || {
 
 This check MUST be performed in ALL commands that:
 - Create issues (`linear issue create`)
-- Edit issues (`linear issue edit`)
-- Comment on issues (`linear issue comment`)
+- Update issues (`linear issue update`)
+- Comment on issues (`linear issue comment add`)
 - Any other operation that modifies Linear data
 
 ## Authentication
@@ -36,7 +36,7 @@ linear-cli manages its own authentication. Do not store API tokens in config fil
 ```bash
 # If unauthenticated, linear-cli commands will fail with a clear message.
 # Instruct user to run: linear auth login
-linear teams 2>/dev/null | head -1 || {
+linear team list >/dev/null 2>&1 || {
   echo "❌ linear-cli not authenticated. Run: linear auth login"
   exit 1
 }
@@ -72,19 +72,19 @@ issue_id=$(linear issue create \
 ### Add Comment
 ```bash
 # ALWAYS check LINEAR_TEAM_ID first!
-linear issue comment "{identifier}" --body "{comment_body}"
+linear issue comment add "{identifier}" --body "{comment_body}"
 ```
 
 ### Update State
 ```bash
 # ALWAYS check LINEAR_TEAM_ID first!
 # State names are team-specific — use values from LINEAR_IN_PROGRESS_STATE, LINEAR_DONE_STATE, LINEAR_DEFAULT_STATE
-linear issue edit "{identifier}" --state "{state_name}"
+linear issue update "{identifier}" --state "{state_name}"
 ```
 
 ### Assign to Self
 ```bash
-linear issue edit "{identifier}" --assignee @me
+linear issue update "{identifier}" --assignee self
 ```
 
 ## Error Handling
@@ -99,5 +99,7 @@ If any linear command fails:
 - **ALWAYS** check `LINEAR_TEAM_ID` is set before any write operation
 - Issue identifiers follow `{TEAM_KEY}-{NUMBER}` format (e.g. `ENG-42`)
 - linear-cli does not use `--json` flag; parse plain text output when needed
+- `linear issue create` outputs the identifier followed by a URL (e.g. `ENG-42 https://...`); extract ID with `| grep -oE '[A-Z]+-[0-9]+' | head -1`
 - State names must exactly match your Linear team's workflow states
 - Keep operations atomic — one linear command per action
+- `--description` accepts inline text only; truncate large bodies to ~4000 chars to avoid shell ARG_MAX limits

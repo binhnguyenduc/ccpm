@@ -175,7 +175,7 @@ if [ "$tracker_choice" = "linear" ] || [ "$tracker_choice" = "2" ]; then
   echo "✅ linear-cli found: $(which linear)"
 
   # Check 2: authenticated?
-  if ! linear teams >/dev/null 2>&1; then
+  if ! linear team list >/dev/null 2>&1; then
     echo "❌ linear-cli not authenticated."
     echo ""
     echo "Run: linear auth login"
@@ -187,7 +187,7 @@ if [ "$tracker_choice" = "linear" ] || [ "$tracker_choice" = "2" ]; then
   # Check 3: team configuration
   echo ""
   echo "Available Linear teams:"
-  linear teams 2>/dev/null | head -20
+  linear team list 2>/dev/null | head -20
   echo ""
   read -rp "Enter your team key (e.g. ENG): " linear_team_id
   if [ -z "$linear_team_id" ]; then
@@ -223,10 +223,16 @@ if [ "$tracker_choice" = "linear" ] || [ "$tracker_choice" = "2" ]; then
   # Write Linear config block to ccpm.config
   ccpm_config_path=".claude/ccpm.config"
   if grep -q "CCPM_TRACKER" "$ccpm_config_path" 2>/dev/null; then
-    # Update existing
+    # Update CCPM_TRACKER
     sed -i.bak "s/^CCPM_TRACKER=.*/CCPM_TRACKER=linear/" "$ccpm_config_path"
-    sed -i.bak "s/^LINEAR_TEAM_ID=.*/LINEAR_TEAM_ID=${linear_team_id}/" "$ccpm_config_path"
     rm -f "${ccpm_config_path}.bak"
+    # Update LINEAR_TEAM_ID if it exists, otherwise append it
+    if grep -q "^LINEAR_TEAM_ID=" "$ccpm_config_path"; then
+      sed -i.bak "s/^LINEAR_TEAM_ID=.*/LINEAR_TEAM_ID=${linear_team_id}/" "$ccpm_config_path"
+      rm -f "${ccpm_config_path}.bak"
+    else
+      echo "LINEAR_TEAM_ID=${linear_team_id}" >> "$ccpm_config_path"
+    fi
     echo "✅ Updated CCPM_TRACKER=linear in ccpm.config"
   else
     cat >> "$ccpm_config_path" << EOF
@@ -287,9 +293,14 @@ echo "✅ Initialization Complete!"
 echo "=========================="
 echo ""
 echo "📊 System Status:"
-gh --version | head -1
-echo "  Extensions: $(gh extension list | wc -l) installed"
-echo "  Auth: $(gh auth status 2>&1 | grep -o 'Logged in to [^ ]*' || echo 'Not authenticated')"
+if [ "${tracker_choice}" = "linear" ] || [ "${tracker_choice}" = "2" ]; then
+  echo "  Tracker: linear (team: ${linear_team_id})"
+  linear --version 2>/dev/null | head -1 || true
+else
+  gh --version | head -1
+  echo "  Extensions: $(gh extension list | wc -l) installed"
+  echo "  Auth: $(gh auth status 2>&1 | grep -o 'Logged in to [^ ]*' || echo 'Not authenticated')"
+fi
 echo ""
 echo "🎯 Next Steps:"
 echo "  1. Create your first PRD: /pm:prd-new <feature-name>"

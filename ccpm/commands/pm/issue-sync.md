@@ -21,6 +21,8 @@ Push local updates as GitHub issue comments for transparent audit trail.
 Before proceeding, complete these validation steps.
 Do not bother the user with preflight checks progress ("I'm not going to ..."). Just do them and move on.
 
+**Linear users skip:** If `CCPM_TRACKER=linear` (check with `source .claude/ccpm.config 2>/dev/null`), skip this entire Preflight Checklist and go directly to Step 0a in the Instructions section.
+
 0. **Repository Protection Check:**
    Follow `/rules/github-operations.md` - check remote origin:
    ```bash
@@ -97,7 +99,8 @@ fi
 }
 
 # Gather local updates for comment
-mkdir -p .claude/epics/*/updates/$ARGUMENTS
+update_dir=$(find .claude/epics -type d -name "$ARGUMENTS" 2>/dev/null | head -1)
+[ -n "$update_dir" ] || mkdir -p ".claude/epics/${linear_id%%-*}/updates/$ARGUMENTS" 2>/dev/null || true
 update_dir=$(find .claude/epics -type d -name "$ARGUMENTS" 2>/dev/null | head -1)
 current_date=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 
@@ -119,7 +122,7 @@ None
 EOF
 
 # Post comment to Linear
-linear issue comment "$linear_id" --body "$(cat /tmp/linear-comment.md)"
+linear issue comment add "$linear_id" --body "$(cat /tmp/linear-comment.md)"
 echo "✅ Posted progress comment to Linear issue $linear_id"
 
 # Update last_sync in progress.md frontmatter

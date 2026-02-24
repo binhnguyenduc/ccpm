@@ -32,8 +32,13 @@ command -v linear >/dev/null 2>&1 || {
   exit 1
 }
 
-# Resolve identifier from filename or frontmatter
-task_file=".claude/epics/{epic_name}/$ARGUMENTS.md"
+# Resolve task file and Linear identifier
+task_file=$(find .claude/epics -name "$ARGUMENTS.md" 2>/dev/null | head -1)
+if [ -z "$task_file" ]; then
+  echo "❌ No local task file found for: $ARGUMENTS"
+  exit 1
+fi
+
 linear_id=$(basename "$task_file" .md)
 if [[ ! "$linear_id" =~ ^[A-Z]+-[0-9]+$ ]]; then
   linear_id=$(grep '^linear:' "$task_file" | sed 's|.*issue/||' | tr -d '[:space:]')
@@ -45,12 +50,12 @@ fi
 }
 
 # Transition to Done state
-linear issue edit "$linear_id" --state "$LINEAR_DONE_STATE"
+linear issue update "$linear_id" --state "$LINEAR_DONE_STATE"
 echo "✅ Linear issue $linear_id set to: $LINEAR_DONE_STATE"
 
 # Update local task frontmatter
 current_date=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-[ -f "$task_file" ] && {
+{
   sed -i.bak "s/^status:.*/status: closed/" "$task_file"
   sed -i.bak "s/^updated:.*/updated: $current_date/" "$task_file"
   rm -f "${task_file}.bak"
