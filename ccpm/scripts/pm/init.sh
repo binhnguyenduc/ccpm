@@ -147,6 +147,115 @@ else
   echo "  Initialize with: git init"
 fi
 
+# ─── Tracker Selection ──────────────────────────────────────────────────────
+echo ""
+echo "Which issue tracker will you use?"
+echo "  1) github (default)"
+echo "  2) linear"
+read -rp "Tracker [github]: " tracker_choice
+tracker_choice="${tracker_choice:-github}"
+
+if [ "$tracker_choice" = "linear" ] || [ "$tracker_choice" = "2" ]; then
+  echo ""
+  echo "Setting up Linear integration..."
+  echo ""
+
+  # Check 1: linear-cli installed?
+  if ! command -v linear >/dev/null 2>&1; then
+    echo "❌ linear-cli not found."
+    echo ""
+    echo "Install it first:"
+    echo "  macOS:      brew install schpet/tap/linear"
+    echo "  Cross-platform: cargo install linear-cli"
+    echo "  See: https://github.com/schpet/linear-cli"
+    echo ""
+    echo "Re-run /pm:init after installing."
+    exit 1
+  fi
+  echo "✅ linear-cli found: $(which linear)"
+
+  # Check 2: authenticated?
+  if ! linear teams >/dev/null 2>&1; then
+    echo "❌ linear-cli not authenticated."
+    echo ""
+    echo "Run: linear auth login"
+    echo "Then re-run /pm:init."
+    exit 1
+  fi
+  echo "✅ linear-cli authenticated"
+
+  # Check 3: team configuration
+  echo ""
+  echo "Available Linear teams:"
+  linear teams 2>/dev/null | head -20
+  echo ""
+  read -rp "Enter your team key (e.g. ENG): " linear_team_id
+  if [ -z "$linear_team_id" ]; then
+    echo "❌ Team key is required. Re-run /pm:init and provide a team key."
+    exit 1
+  fi
+  echo "✅ Team key: $linear_team_id"
+
+  # Check 4: Linear Claude Code skill (advisory)
+  skill_found=false
+  if ls .claude/commands/linear* 2>/dev/null | head -1 >/dev/null 2>&1; then
+    skill_found=true
+  elif ls ~/.claude/commands/linear* 2>/dev/null | head -1 >/dev/null 2>&1; then
+    skill_found=true
+  fi
+
+  if [ "$skill_found" = false ]; then
+    echo ""
+    echo "⚠️  Linear Claude Code skill not detected."
+    echo "For richer agent-Linear integration, consider installing it:"
+    echo "  See your skill registry for a Linear skill"
+    echo ""
+    read -rp "Continue without it? (yes/no) [yes]: " continue_without
+    continue_without="${continue_without:-yes}"
+    if [ "$continue_without" != "yes" ] && [ "$continue_without" != "y" ]; then
+      echo "Install the skill and re-run /pm:init."
+      exit 0
+    fi
+  else
+    echo "✅ Linear Claude Code skill detected"
+  fi
+
+  # Write Linear config block to ccpm.config
+  ccpm_config_path=".claude/ccpm.config"
+  if grep -q "CCPM_TRACKER" "$ccpm_config_path" 2>/dev/null; then
+    # Update existing
+    sed -i.bak "s/^CCPM_TRACKER=.*/CCPM_TRACKER=linear/" "$ccpm_config_path"
+    sed -i.bak "s/^LINEAR_TEAM_ID=.*/LINEAR_TEAM_ID=${linear_team_id}/" "$ccpm_config_path"
+    rm -f "${ccpm_config_path}.bak"
+    echo "✅ Updated CCPM_TRACKER=linear in ccpm.config"
+  else
+    cat >> "$ccpm_config_path" << EOF
+
+# Linear tracker configuration (added by /pm:init)
+CCPM_TRACKER=linear
+LINEAR_TEAM_ID=${linear_team_id}
+LINEAR_DEFAULT_STATE="\${LINEAR_DEFAULT_STATE:-Todo}"
+LINEAR_IN_PROGRESS_STATE="\${LINEAR_IN_PROGRESS_STATE:-In Progress}"
+LINEAR_DONE_STATE="\${LINEAR_DONE_STATE:-Done}"
+export CCPM_TRACKER LINEAR_TEAM_ID LINEAR_DEFAULT_STATE LINEAR_IN_PROGRESS_STATE LINEAR_DONE_STATE
+EOF
+    echo "✅ Written Linear config to ccpm.config"
+  fi
+
+  echo ""
+  echo "✅ Linear integration configured!"
+  echo "   Tracker: linear"
+  echo "   Team:    ${linear_team_id}"
+
+else
+  # GitHub (default) — ensure config reflects this
+  if grep -q "CCPM_TRACKER" ".claude/ccpm.config" 2>/dev/null; then
+    sed -i.bak "s/^CCPM_TRACKER=.*/CCPM_TRACKER=github/" ".claude/ccpm.config"
+    rm -f ".claude/ccpm.config.bak"
+  fi
+  echo "✅ Using GitHub as issue tracker (default)"
+fi
+
 # Create CLAUDE.md if it doesn't exist
 if [ ! -f "CLAUDE.md" ]; then
   echo ""
