@@ -59,7 +59,77 @@ Do not bother the user with preflight checks progress ("I'm not going to ..."). 
 
 ## Instructions
 
-You are synchronizing local development progress to GitHub as issue comments for: **Issue #$ARGUMENTS**
+You are synchronizing local development progress to the issue tracker for: **Issue #$ARGUMENTS**
+
+### 0a. Detect Tracker
+
+```bash
+source .claude/ccpm.config 2>/dev/null || true
+CCPM_TRACKER="${CCPM_TRACKER:-github}"
+```
+
+If `CCPM_TRACKER=linear`: Follow Step 0L then skip GitHub steps (Preflight Checklist steps 0–4, and Steps 5, 6, 7, 8, 9 below).
+If `CCPM_TRACKER=github`: Skip Step 0L, continue with existing Preflight and Steps.
+
+### 0L. Linear Issue Sync
+
+```bash
+# Preflight
+command -v linear >/dev/null 2>&1 || {
+  echo "❌ linear-cli not found. Install: brew install schpet/tap/linear"
+  exit 1
+}
+
+# Resolve Linear issue identifier
+task_file=$(find .claude/epics -name "$ARGUMENTS.md" 2>/dev/null | head -1)
+if [ -n "$task_file" ]; then
+  linear_id=$(basename "$task_file" .md)
+  # If filename looks like a number (not a Linear ID), try frontmatter
+  if [[ ! "$linear_id" =~ ^[A-Z]+-[0-9]+$ ]]; then
+    linear_id=$(grep '^linear:' "$task_file" 2>/dev/null | sed 's|.*issue/||' | tr -d '[:space:]')
+  fi
+fi
+
+[ -z "$linear_id" ] && {
+  echo "❌ Cannot resolve Linear issue identifier for #$ARGUMENTS."
+  echo "Is this task synced to Linear? Run: /pm:epic-sync {epic_name}"
+  exit 1
+}
+
+# Gather local updates for comment
+mkdir -p .claude/epics/*/updates/$ARGUMENTS
+update_dir=$(find .claude/epics -type d -name "$ARGUMENTS" 2>/dev/null | head -1)
+current_date=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+
+# Build comment body
+cat > /tmp/linear-comment.md << EOF
+## 🔄 Progress Update - ${current_date}
+
+### ✅ Completed Work
+$(cat "${update_dir}/progress.md" 2>/dev/null | grep -A 100 "## Completed" | tail -n +2 | head -20 || echo "- See local progress files")
+
+### 🔄 In Progress
+$(cat "${update_dir}/progress.md" 2>/dev/null | grep -A 10 "## Working On" | tail -n +2 | head -10 || echo "- Ongoing")
+
+### ⚠️ Blockers
+None
+
+---
+*Synced from local updates at ${current_date}*
+EOF
+
+# Post comment to Linear
+linear issue comment "$linear_id" --body "$(cat /tmp/linear-comment.md)"
+echo "✅ Posted progress comment to Linear issue $linear_id"
+
+# Update last_sync in progress.md frontmatter
+progress_file="${update_dir}/progress.md"
+if [ -f "$progress_file" ]; then
+  sed -i.bak "s/^last_sync:.*/last_sync: ${current_date}/" "$progress_file"
+  rm -f "${progress_file}.bak"
+  echo "✅ Updated last_sync in progress.md"
+fi
+```
 
 ### 1. Gather Local Updates
 Collect all local updates for the issue:
