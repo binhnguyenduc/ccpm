@@ -13,6 +13,51 @@ Reopen a closed issue.
 
 ## Instructions
 
+### 0. Detect Tracker
+
+```bash
+source .claude/ccpm.config 2>/dev/null || true
+CCPM_TRACKER="${CCPM_TRACKER:-github}"
+```
+
+**If `CCPM_TRACKER=linear`**: Follow Step 0L (Linear reopen).
+**If `CCPM_TRACKER=github`**: Skip Step 0L, follow existing steps.
+
+### 0L. Linear Issue Reopen
+
+```bash
+# Preflight
+command -v linear >/dev/null 2>&1 || {
+  echo "❌ linear-cli not found. Install: brew install schpet/tap/linear"
+  exit 1
+}
+
+# Resolve identifier
+task_file=".claude/epics/{epic_name}/$ARGUMENTS.md"
+linear_id=$(basename "$task_file" .md)
+if [[ ! "$linear_id" =~ ^[A-Z]+-[0-9]+$ ]]; then
+  linear_id=$(grep '^linear:' "$task_file" | sed 's|.*issue/||' | tr -d '[:space:]')
+fi
+
+[ -z "$linear_id" ] && {
+  echo "❌ Cannot resolve Linear issue identifier."
+  exit 1
+}
+
+# Transition to default (Todo) state
+linear issue edit "$linear_id" --state "$LINEAR_DEFAULT_STATE"
+echo "✅ Linear issue $linear_id set to: $LINEAR_DEFAULT_STATE"
+
+# Update local task frontmatter
+current_date=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+[ -f "$task_file" ] && {
+  sed -i.bak "s/^status:.*/status: open/" "$task_file"
+  sed -i.bak "s/^updated:.*/updated: $current_date/" "$task_file"
+  rm -f "${task_file}.bak"
+  echo "✅ Local task frontmatter updated: status=open"
+}
+```
+
 ### 1. Find Local Task File
 
 Search for task file with `github:.*issues/$ARGUMENTS` in frontmatter.
