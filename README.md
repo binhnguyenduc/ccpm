@@ -387,24 +387,16 @@ Teams using this system report:
 
 ### Quick Setup (2 minutes)
 
-1. **Install this repository into your project**:
-
-   #### Unix/Linux/macOS
+1. **Install CCPM into your project**:
 
    ```bash
    cd path/to/your/project/
-   curl -sSL https://automaze.io/ccpm/install | bash
-   # or: wget -qO- https://automaze.io/ccpm/install | bash
+   curl -sSL https://raw.githubusercontent.com/binhnguyenduc/ccpm/main/install/install.sh | bash
    ```
 
-   #### Windows (PowerShell)
-   ```bash
-   cd path/to/your/project/
-   iwr -useb https://automaze.io/ccpm/install | iex
-   ```
-   > ⚠️ **IMPORTANT**: If you already have a `.claude` directory, clone this repository to a different directory and copy the contents of the cloned `.claude` directory to your project's `.claude` directory.
+   This installs all CCPM commands, agents, rules, and scripts into your project's `.claude/` directory. Safe to re-run for updates.
 
-   See full/other installation options in the [installation guide ›](https://github.com/automazeio/ccpm/tree/main/install)
+   See [installation guide](https://github.com/binhnguyenduc/ccpm/tree/main/install) for manual install options.
 
 
 2. **Initialize the PM system**:
